@@ -6,8 +6,8 @@ codeberg.org/gruf/go-config v1.0.0/go.mod h1:+n6jowdtCTSWo2W+Agfsz5ttTHukKNvlzzq
 codeberg.org/gruf/go-errors v1.0.0 h1:jzEnAwICwGLTP4pHaGD9aD3HVR0ZzJb4AB01xTPKpF4=
 codeberg.org/gruf/go-errors v1.0.0/go.mod h1:G66SPILZJMOGRRHwAK7KSEk9N5fEnCk7asFc+De1SP0=
 codeberg.org/gruf/go-logger v1.0.3/go.mod h1:BLwlr04s5qjniVZ8okCT9fepGL+B/dfmyZ9zBjnjDWs=
-codeberg.org/gruf/go-logger v1.1.3 h1:Y6ZyC4ws4VpFC4eIycYDcjZPe0TsCKWXnQUDPtkoViM=
-codeberg.org/gruf/go-logger v1.1.3/go.mod h1:tBduUc+Yb9vqGRxY9/FB0ZlYznSteLy/KmIANo7zFjA=
+codeberg.org/gruf/go-logger v1.1.5 h1:FZCsi6Wgt2JI2CAr4dINeCfyY38LVZjvf7y1xXqeLjM=
+codeberg.org/gruf/go-logger v1.1.5/go.mod h1:tBduUc+Yb9vqGRxY9/FB0ZlYznSteLy/KmIANo7zFjA=
 codeberg.org/gruf/go-nowish v1.0.0/go.mod h1:70nvICNcqQ9OHpF07N614Dyk7cpL5ToWU1K1ZVCec2s=
 codeberg.org/gruf/go-nowish v1.0.2 h1:/y8g38x44sD8JeqBPCkzqLoe0pReR1CTF8p6jXCOG1s=
 codeberg.org/gruf/go-nowish v1.0.2/go.mod h1:70nvICNcqQ9OHpF07N614Dyk7cpL5ToWU1K1ZVCec2s=
