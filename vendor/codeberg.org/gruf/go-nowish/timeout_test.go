@@ -36,6 +36,33 @@ func TestTimeoutNoTimeout(t *testing.T) {
 	to.Cancel()
 }
 
+func TestTimeoutExtension(t *testing.T) {
+	to := nowish.NewTimeout()
+
+	done := make(chan struct{})
+	to.Start(time.Second, func() {
+		close(done)
+	})
+
+	if !to.Extend(time.Second) {
+		t.Fatal("failed to extend timeout")
+	}
+
+	time.Sleep(time.Second)
+
+	select {
+	case <-done:
+		t.Fatal("timed out even after extension")
+	default:
+	}
+
+	select {
+	case <-done:
+	case <-time.After(time.Second * 2):
+		t.Fatal("timed out waiting for timeout after extension")
+	}
+}
+
 func TestTimeoutReuse(t *testing.T) {
 	onTimeout := func() {
 		t.Fatal("Unexpected timeout")

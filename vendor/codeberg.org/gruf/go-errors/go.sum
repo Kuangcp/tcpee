@@ -1,7 +1,5 @@
 codeberg.org/gruf/go-bytes v1.0.2 h1:malqE42Ni+h1nnYWBUAJaDDtEzF4aeN4uPN8DfMNNvo=
 codeberg.org/gruf/go-bytes v1.0.2/go.mod h1:1v/ibfaosfXSZtRdW2rWaVrDXMc9E3bsi/M9Ekx39cg=
-codeberg.org/gruf/go-logger v1.2.3 h1:WJWs/v4s//d+gJE3PJEXWHkSIsRVP1u3Ukcg+mPIVk4=
-codeberg.org/gruf/go-logger v1.2.3/go.mod h1:tBduUc+Yb9vqGRxY9/FB0ZlYznSteLy/KmIANo7zFjA=
 codeberg.org/gruf/go-logger v1.3.1 h1:1f10GQAkVbd3gNdpfSNHOVfaTFLLS8ebuA7IRXd8n90=
 codeberg.org/gruf/go-logger v1.3.1/go.mod h1:tBduUc+Yb9vqGRxY9/FB0ZlYznSteLy/KmIANo7zFjA=
 codeberg.org/gruf/go-nowish v1.0.2 h1:/y8g38x44sD8JeqBPCkzqLoe0pReR1CTF8p6jXCOG1s=

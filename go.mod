@@ -4,6 +4,6 @@ go 1.16
 
 require (
 	codeberg.org/gruf/go-config v1.0.0
-	codeberg.org/gruf/go-errors v1.0.3
-	codeberg.org/gruf/go-logger v1.3.1
+	codeberg.org/gruf/go-errors v1.0.4
+	codeberg.org/gruf/go-logger v1.3.2
 )

@@ -142,6 +142,7 @@ func TestArgPrinting(t *testing.T) {
 		time.Time{},
 		&time.Time{},
 		(*time.Time)(nil),
+		(***string)(nil),
 		nil,
 		unsafe.Pointer(&testSlice1),
 		unsafe.Pointer(nil),
