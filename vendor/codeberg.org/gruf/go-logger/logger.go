@@ -2,58 +2,60 @@ package logger
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"sync"
 	"sync/atomic"
 
-	"codeberg.org/gruf/go-bytes"
+	"codeberg.org/gruf/go-format"
 )
 
 type Logger struct {
-	// Hooks defines a list of hooks which are called before an entry
-	// is written. This should NOT be modified while the Logger is in use
+	// Hooks defines a list of hooks which can be called on each
+	// Entry using the .Hooks() receiver.
 	Hooks []Hook
 
-	// Level is the current log LEVEL, entries at level below the
-	// currently set level will not be output. This should NOT
-	// be modified while the Logger is in use
-	Level LEVEL
+	// Format allows specifying the underlying formatting
+	// method/library used.
+	Format Formatter
+
+	// Levels defines currently set mappings of available log levels
+	// to their string representation.
+	Levels Levels
 
 	// Timestamp defines whether to automatically append timestamps
 	// to entries written via Logger convience methods and specifically
-	// Entry.TimestampIf(). This should NOT be modified while Logger in use
+	// Entry.TimestampIf().
 	Timestamp bool
 
-	// Format is the log entry LogFormat to use. This should NOT
-	// be modified while the Logger is in use
-	Format LogFormat
+	// Level is the current log LEVEL, entries at level below the
+	// currently set level will not be output.
+	Level LEVEL
 
 	// BufferSize is the Entry buffer size to use when allocating
-	// new Entry objects. This should be modified atomically
+	// new Entry objects. This should be modified atomically.
 	BufSize int64
 
-	// Output is the log's output writer. This should NOT be
-	// modified while the Logger is in use
+	// Output is the log's output writer.
 	Output io.Writer
 
-	// entry pool
+	// entry pool.
 	pool sync.Pool
 }
 
 // New returns a new Logger instance with defaults
 func New(out io.Writer) *Logger {
-	return NewWith(0 /* all */, true, DefaultTextFormat, 512, out)
+	return NewWith(0 /* all */, true, Fmt(), 512, out)
 }
 
 // NewWith returns a new Logger instance with supplied configuration
-func NewWith(lvl LEVEL, timestamp bool, fmt LogFormat, bufsize int64, out io.Writer) *Logger {
+func NewWith(lvl LEVEL, timestamp bool, fmt Formatter, bufsize int64, out io.Writer) *Logger {
 	// Create new logger object
 	log := &Logger{
-		Level:     lvl,
-		Timestamp: timestamp,
 		Format:    fmt,
+		Levels:    DefaultLevels(),
+		Timestamp: timestamp,
+		Level:     lvl,
 		BufSize:   bufsize,
 		Output:    out,
 	}
@@ -65,7 +67,7 @@ func NewWith(lvl LEVEL, timestamp bool, fmt LogFormat, bufsize int64, out io.Wri
 	log.pool.New = func() interface{} {
 		return &Entry{
 			lvl: unset,
-			buf: &bytes.Buffer{B: make([]byte, 0, atomic.LoadInt64(&log.BufSize))},
+			buf: &format.Buffer{B: make([]byte, 0, atomic.LoadInt64(&log.BufSize))},
 			log: log,
 		}
 	}
@@ -148,40 +150,12 @@ func (l *Logger) Logf(lvl LEVEL, s string, a ...interface{}) {
 	}
 }
 
-// LogFields prints the provided fields formatted as key-value pairs at the supplied log level
-func (l *Logger) LogFields(lvl LEVEL, fields map[string]interface{}) {
-	if lvl >= l.Level {
-		l.Entry().TimestampIf().Level(lvl).Fields(fields).Hooks().Send()
-	}
-}
-
-// LogValues prints the provided values formatted as-so at the supplied log level
-func (l *Logger) LogValues(lvl LEVEL, a ...interface{}) {
-	if lvl >= l.Level {
-		l.Entry().TimestampIf().Level(lvl).Values(a...).Hooks().Send()
-	}
-}
-
 // Print simply prints provided arguments
 func (l *Logger) Print(a ...interface{}) {
-	e := l.Entry().TimestampIf()
-	fmt.Fprint(e.buf, a...)
-	e.Send()
+	l.Entry().TimestampIf().Msg(a...)
 }
 
 // Printf simply prints provided the provided format string and arguments
 func (l *Logger) Printf(s string, a ...interface{}) {
-	e := l.Entry().TimestampIf()
-	fmt.Fprintf(e.buf, s, a...)
-	e.Send()
-}
-
-// PrintFields prints the provided fields formatted as key-value pairs
-func (l *Logger) PrintFields(fields map[string]interface{}) {
-	l.Entry().TimestampIf().Fields(fields).Send()
-}
-
-// PrintValues prints the provided values formatted as-so
-func (l *Logger) PrintValues(a ...interface{}) {
-	l.Entry().TimestampIf().Values(a...).Send()
+	l.Entry().TimestampIf().Msgf(s, a...)
 }

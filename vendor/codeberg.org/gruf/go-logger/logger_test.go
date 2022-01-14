@@ -2,7 +2,6 @@ package logger_test
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -95,19 +94,23 @@ this license.
 	testLongArgs1 = []interface{}{testLongString, testMap4, testInt1, testInt2, testSlice1, testSlice3}
 	testLongArgs2 = []interface{}{testShortString, testFloat1, testInt2, testMap1, testMap2, testSlice4, testSlice3, testFloat2}
 
-	testShortFormat1     = "Hello world! Here's %d an int. Now float %f"
-	testShortFormat2     = "And again... %s a string! Also a bool slice %v"
+	testShortFmt1        = "Hello world! Here's %d an int. Now float %f"
+	testShortFmt2        = "And again... %s a string! Also a bool slice %v"
+	testShortFormat1     = "Hello world! Here's {} an int. Now float {}"
+	testShortFormat2     = "And again... {} a string! Also a bool slice {}"
 	testShortFormat1Args = []interface{}{testInt1, testFloat1}
 	testShortFormat2Args = []interface{}{testShortString, testSlice3}
 
-	testLongFormat1     = "Oh boy %v here is %v a bunch of %v args %s. This is wild! %v"
-	testLongFormat2     = "%d %f %v not even trying with this one are we %v %v %s"
+	testLongFmt1        = "Oh boy %v here is %v a bunch of %v args %s. This is wild! %v"
+	testLongFmt2        = "%d %f %v not even trying with this one are we %v %v %s"
+	testLongFormat1     = "Oh boy {} here is {} a bunch of {} args {}. This is wild! {}"
+	testLongFormat2     = "{} {} {} not even trying with this one are we {} {} {}"
 	testLongFormat1Args = []interface{}{testMap1, testSlice4, testSlice2, testLongString, testMap4}
 	testLongFormat2Args = []interface{}{testInt2, testFloat2, testMap3, testMap2, testSlice1, testShortString}
 )
 
 func newLogger() *logger.Logger {
-	return logger.NewWith(0, true, logger.DefaultTextFormat, 512, logger.AddSafety(io.Discard))
+	return logger.NewWith(0, true, logger.Fmt(), 512, logger.AddSafety(io.Discard))
 }
 
 func newStdLogger() *log.Logger {
@@ -123,7 +126,7 @@ func newLogrusLogger() *logrus.Logger {
 func TestArgPrinting(t *testing.T) {
 	l := newLogger()
 
-	l.Entry().Values(
+	l.Entry().Append(
 		uint8(1),
 		uint16(1),
 		uint32(1),
@@ -160,28 +163,6 @@ func TestArgPrinting(t *testing.T) {
 		[]byte{},
 		http.Server{},
 	).Send()
-}
-
-func BenchmarkLoggerFieldPrinting(b *testing.B) {
-	l := newLogger()
-	b.ReportAllocs()
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			l.PrintValues(testMap4)
-		}
-	})
-}
-
-func BenchmarkFmtFieldPrinting(b *testing.B) {
-	w := logger.AddSafety(ioutil.Discard)
-	b.ReportAllocs()
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			fmt.Fprintf(w, "%#v", testMap4)
-		}
-	})
 }
 
 func BenchmarkLoggerMultiString(b *testing.B) {
@@ -221,10 +202,10 @@ func BenchmarkLogMultiString(b *testing.B) {
 			l.Print(testLongArgs1...)
 			l.Print(testShortArgs2...)
 			l.Print(testLongArgs2...)
-			l.Printf(testShortFormat1, testShortFormat1Args...)
-			l.Printf(testLongFormat1, testLongFormat1Args...)
-			l.Printf(testShortFormat2, testShortFormat2Args...)
-			l.Printf(testLongFormat2, testLongFormat2Args...)
+			l.Printf(testShortFmt1, testShortFormat1Args...)
+			l.Printf(testLongFmt1, testLongFormat1Args...)
+			l.Printf(testShortFmt2, testShortFormat2Args...)
+			l.Printf(testLongFmt2, testLongFormat2Args...)
 		}
 	})
 }
@@ -245,9 +226,9 @@ func BenchmarkLogrusMultiString(b *testing.B) {
 			l.Print(testShortArgs2...)
 			l.Print(testLongArgs2...)
 			l.Printf(testShortFormat1, testShortFormat1Args...)
-			l.Printf(testLongFormat1, testLongFormat1Args...)
-			l.Printf(testShortFormat2, testShortFormat2Args...)
-			l.Printf(testLongFormat2, testLongFormat2Args...)
+			l.Printf(testLongFmt1, testLongFormat1Args...)
+			l.Printf(testShortFmt2, testShortFormat2Args...)
+			l.Printf(testLongFmt2, testLongFormat2Args...)
 		}
 	})
 }
@@ -416,8 +397,8 @@ func BenchmarkLogShortFormat(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			l.Printf(testShortFormat1, testShortFormat1Args...)
-			l.Printf(testShortFormat2, testShortFormat2Args...)
+			l.Printf(testShortFmt1, testShortFormat1Args...)
+			l.Printf(testShortFmt2, testShortFormat2Args...)
 		}
 	})
 }
@@ -428,8 +409,8 @@ func BenchmarkLogrusShortFormat(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			l.Printf(testShortFormat1, testShortFormat1Args...)
-			l.Printf(testShortFormat2, testShortFormat2Args...)
+			l.Printf(testShortFmt1, testShortFormat1Args...)
+			l.Printf(testShortFmt2, testShortFormat2Args...)
 		}
 	})
 }
@@ -452,8 +433,8 @@ func BenchmarkLogLongFormat(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			l.Printf(testLongFormat1, testLongFormat1Args...)
-			l.Printf(testLongFormat2, testLongFormat2Args...)
+			l.Printf(testLongFmt1, testLongFormat1Args...)
+			l.Printf(testLongFmt2, testLongFormat2Args...)
 		}
 	})
 }
@@ -464,8 +445,8 @@ func BenchmarkLogrusLongFormat(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			l.Printf(testLongFormat1, testLongFormat1Args...)
-			l.Printf(testLongFormat2, testLongFormat2Args...)
+			l.Printf(testLongFmt1, testLongFormat1Args...)
+			l.Printf(testLongFmt2, testLongFormat2Args...)
 		}
 	})
 }

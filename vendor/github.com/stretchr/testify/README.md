@@ -1,9 +1,7 @@
 Testify - Thou Shalt Write Tests
 ================================
 
-ℹ️ We are working on testify v2 and would love to hear what you'd like to see in it, have your say here: https://cutt.ly/testify
-
-[![Build Status](https://travis-ci.org/stretchr/testify.svg)](https://travis-ci.org/stretchr/testify) [![Go Report Card](https://goreportcard.com/badge/github.com/stretchr/testify)](https://goreportcard.com/report/github.com/stretchr/testify) [![PkgGoDev](https://pkg.go.dev/badge/github.com/stretchr/testify)](https://pkg.go.dev/github.com/stretchr/testify)
+[![Build Status](https://travis-ci.org/stretchr/testify.svg)](https://travis-ci.org/stretchr/testify) [![Go Report Card](https://goreportcard.com/badge/github.com/stretchr/testify)](https://goreportcard.com/report/github.com/stretchr/testify) [![GoDoc](https://godoc.org/github.com/stretchr/testify?status.svg)](https://godoc.org/github.com/stretchr/testify)
 
 Go code (golang) set of packages that provide many tools for testifying that your code will behave as you intend.
 
@@ -169,12 +167,12 @@ func TestSomething(t *testing.T) {
 
 }
 
-// TestSomethingWithPlaceholder is a second example of how to use our test object to
+// TestSomethingElse is a second example of how to use our test object to
 // make assertions about some target code we are testing.
 // This time using a placeholder. Placeholders might be used when the
 // data being passed in is normally dynamically generated and cannot be
 // predicted beforehand (eg. containing hashes that are time sensitive)
-func TestSomethingWithPlaceholder(t *testing.T) {
+func TestSomethingElse(t *testing.T) {
 
   // create an instance of our test object
   testObj := new(MyMockedObject)
@@ -289,10 +287,8 @@ To install Testify, use `go get`:
 This will then make the following packages available to you:
 
     github.com/stretchr/testify/assert
-    github.com/stretchr/testify/require
     github.com/stretchr/testify/mock
-    github.com/stretchr/testify/suite
-    github.com/stretchr/testify/http (deprecated)
+    github.com/stretchr/testify/http
 
 Import the `testify/assert` package into your code using this template:
 
@@ -323,7 +319,7 @@ To update Testify to the latest version, use `go get -u github.com/stretchr/test
 Supported go versions
 ==================
 
-We support the two major Go versions, which are 1.13 and 1.14 at the moment.
+We support the three major Go versions, which are 1.8, 1.9 and 1.10 at the moment.
 
 ------
 
@@ -332,15 +328,4 @@ Contributing
 
 Please feel free to submit issues, fork the repository and send pull requests!
 
-When submitting an issue, we ask that you please include a complete test function that demonstrates the issue. Extra credit for those using Testify to write the test code that demonstrates it.
-
-Code generation is used. Look for `CODE GENERATED AUTOMATICALLY` at the top of some files. Run `go generate ./...` to update generated files.
-
-We also chat on the [Gophers Slack](https://gophers.slack.com) group in the `#testify` and `#testify-dev` channels.
-
-------
-
-License
-=======
-
-This project is licensed under the terms of the MIT license.
+When submitting an issue, we ask that you please include a complete test function that demonstrates the issue.  Extra credit for those using Testify to write the test code that demonstrates it.

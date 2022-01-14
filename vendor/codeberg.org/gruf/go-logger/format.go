@@ -1,87 +1,51 @@
 package logger
 
 import (
-	"time"
+	"fmt"
 
-	"codeberg.org/gruf/go-bytes"
+	"codeberg.org/gruf/go-format"
 )
 
-// Check our types impl LogFormat
-var _ LogFormat = &TextFormat{}
-
-// Formattable defines a type capable of writing a string formatted form
-// of itself to a supplied byte buffer, and returning the resulting byte
-// buffer. Implementing this will greatly speed up formatting of custom
-// types passed to LogFormat (assuming they implement checking for this).
-type Formattable interface {
-	AppendFormat([]byte) []byte
+// Formatter represents a means of print formatted values and format strings to an io.Writer.
+type Formatter interface {
+	Append(*format.Buffer, ...interface{})
+	Appendf(*format.Buffer, string, ...interface{})
 }
 
-// LogFormat defines a method of formatting log entries
-type LogFormat interface {
-	// AppendKey appends given key to the log buffer
-	AppendKey(buf *bytes.Buffer, key string)
+// Fmt returns a `fmt` (from the std library) based Formatter instance.
+func Fmt() Formatter {
+	return defaultFmt
+}
 
-	// AppendLevel appends given log level as key-value pair to the log buffer
-	AppendLevel(buf *bytes.Buffer, lvl LEVEL)
+// Format returns a `go-format` based Formatter instance, please note this
+// uses Rust-style printf formatting directives and will not be compatible
+// with existing format statements.
+func Format() Formatter {
+	return defaultFormat
+}
 
-	// AppendTimestamp appends given timestamp string as key-value pair to the log buffer
-	AppendTimestamp(buf *bytes.Buffer, fmtNow string)
+// defaultFmt is the global fmtIface instance.
+var defaultFmt = &fmtIface{}
 
-	// AppendValue appends given interface formatted as value to the log buffer
-	AppendValue(buf *bytes.Buffer, value interface{})
+// defaultFormat is the global format.Formatter instance.
+var defaultFormat = &formatterIface{}
 
-	// AppendByte appends given byte value to the log buffer
-	AppendByte(buf *bytes.Buffer, value byte)
+type fmtIface struct{}
 
-	// AppendBytes appends given byte slice value to the log buffer
-	AppendBytes(buf *bytes.Buffer, value []byte)
+func (*fmtIface) Append(buf *format.Buffer, v ...interface{}) {
+	fmt.Fprint(buf, v...)
+}
 
-	// AppendString appends given string value to the log buffer
-	AppendString(buf *bytes.Buffer, value string)
+func (*fmtIface) Appendf(buf *format.Buffer, s string, a ...interface{}) {
+	fmt.Fprintf(buf, s, a...)
+}
 
-	// AppendStrings appends given string slice value to the log buffer
-	AppendStrings(buf *bytes.Buffer, value []string)
+type formatterIface struct{}
 
-	// AppendBool appends given bool value to the log buffer
-	AppendBool(buf *bytes.Buffer, value bool)
+func (*formatterIface) Append(buf *format.Buffer, v ...interface{}) {
+	format.Append(buf, v...)
+}
 
-	// AppendBools appends given bool slice value to the log buffer
-	AppendBools(buf *bytes.Buffer, value []bool)
-
-	// AppendInt appends given int value to the log buffer
-	AppendInt(buf *bytes.Buffer, value int)
-
-	// AppendInts appends given int slice value to the log buffer
-	AppendInts(buf *bytes.Buffer, value []int)
-
-	// AppendUint appends given uint value to the log buffer
-	AppendUint(buf *bytes.Buffer, value uint)
-
-	// AppendUints appends given uint slice value to the log buffer
-	AppendUints(buf *bytes.Buffer, value []uint)
-
-	// AppendFloat appends given float value to the log buffer
-	AppendFloat(buf *bytes.Buffer, value float64)
-
-	// AppendFloats appends given float slice value to the log buffer
-	AppendFloats(buf *bytes.Buffer, value []float64)
-
-	// AppendTime appends given time value to the log buffer
-	AppendTime(buf *bytes.Buffer, value time.Time)
-
-	// AppendTimes appends given time slice value to the log buffer
-	AppendTimes(buf *bytes.Buffer, value []time.Time)
-
-	// AppendDuration appends given duration value to the log buffer
-	AppendDuration(buf *bytes.Buffer, value time.Duration)
-
-	// AppendDurations appends given duration slice value to the log buffer
-	AppendDurations(buf *bytes.Buffer, value []time.Duration)
-
-	// AppendMsg appends given msg as key-value pair to the log buffer using fmt.Sprint(...) formatting
-	AppendMsg(buf *bytes.Buffer, a ...interface{})
-
-	// AppendMsgf appends given msg format string as key-value pair to the log buffer using fmt.Sprintf(...) formatting
-	AppendMsgf(buf *bytes.Buffer, s string, a ...interface{})
+func (*formatterIface) Appendf(buf *format.Buffer, s string, a ...interface{}) {
+	format.Appendf(buf, s, a...)
 }

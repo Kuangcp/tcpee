@@ -1,5 +1,10 @@
 #!/bin/bash
 
+cd "$(dirname $0)"
+DIRS=". assert require mock _codegen"
 set -e
-
-go vet ./...
+for subdir in $DIRS; do
+  pushd $subdir
+  go vet
+  popd
+done
