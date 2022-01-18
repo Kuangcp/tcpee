@@ -225,14 +225,13 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 		hdr := make([]byte, 0, 107)
 		hdr = append(hdr, `PROXY `...)
 
+		sTCPAddr.IP.To4()
+
 		// Append protocol version
-		switch len(sTCPAddr.IP) {
-		case net.IPv4len:
+		if isIPv4(sTCPAddr.IP) {
 			hdr = append(hdr, `TCP `...)
-		case net.IPv6len:
+		} else {
 			hdr = append(hdr, `TCP6 `...)
-		default:
-			hdr = append(hdr, `UNKNOWN `...)
 		}
 
 		// Append src + dst addresses
@@ -331,4 +330,20 @@ func timeoutFunc(d time.Duration, fn func(time.Time) error) func() {
 	return func() {
 		fn(time.Now().Add(d))
 	}
+}
+
+// isIPv4 returns whether IP is IPv4, logic from ip.ToV4()
+func isIPv4(ip net.IP) bool {
+	return (len(ip) == net.IPv4len) ||
+		(len(ip) == net.IPv6len && isZeros(ip[0:10]) && ip[10] == 0xff && ip[11] == 0xff)
+}
+
+// Is p all zeros?
+func isZeros(ip net.IP) bool {
+	for i := 0; i < len(ip); i++ {
+		if ip[i] != 0 {
+			return false
+		}
+	}
+	return true
 }
