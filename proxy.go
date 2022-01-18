@@ -204,7 +204,7 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 	// Cast our connections and addrs
 	dTCPConn := dConn.(*net.TCPConn)
 	sTCPConn := sConn.(*net.TCPConn)
-	dTCPAddr := dTCPConn.RemoteAddr().(*net.TCPAddr)
+	dTCPAddr := dTCPConn.LocalAddr().(*net.TCPAddr)
 	sTCPAddr := sTCPConn.RemoteAddr().(*net.TCPAddr)
 	dstIP := dTCPAddr.IP.String()
 	srcIP := sTCPAddr.IP.String()
@@ -225,11 +225,9 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 		hdr := make([]byte, 0, 107)
 		hdr = append(hdr, `PROXY `...)
 
-		sTCPAddr.IP.To4()
-
 		// Append protocol version
 		if isIPv4(sTCPAddr.IP) {
-			hdr = append(hdr, `TCP `...)
+			hdr = append(hdr, `TCP4 `...)
 		} else {
 			hdr = append(hdr, `TCP6 `...)
 		}
@@ -238,6 +236,7 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 		hdr = append(hdr, srcIP...)
 		hdr = append(hdr, ' ')
 		hdr = append(hdr, dstIP...)
+		hdr = append(hdr, ' ')
 
 		// Append src + dst ports, then final CRLF
 		hdr = strconv.AppendInt(hdr, int64(sTCPAddr.Port), 10)
