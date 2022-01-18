@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,10 +24,11 @@ type TCPProxy struct {
 	// will use, or nil to disable
 	Logger Logger
 
-	// Transparent determines whether to enable Linux transparent
-	// proxying on connections. Note that this must be done in
-	// conjuction with iptables / nf_tables
-	Transparent bool
+	// ProxyProto determines whether to write proxy protocol headers
+	// for each proxied TCP connection. The header is proxy protocol
+	// v1 compatible, and more information can be found here:
+	// https://www.haproxy.org/download/2.6/doc/proxy-protocol.txt
+	ProxyProto bool
 
 	// DialTimeout is the maximum time a dial will wait for a
 	// connection to complete
@@ -54,11 +56,11 @@ type TCPProxy struct {
 
 	lnCfg   net.ListenConfig // lnCfg is the set listener config
 	dialer  net.Dialer       // dialer is the set dialer we use
-	open    int32            // open tracks the no. open proxy connections
 	cancel  func()           // cancel is the proxy context cancel
 	baseCtx context.Context  // baseCtx is the proxy base context
 	serveWg sync.WaitGroup   // serveWg tracks running serve routines
 	doOnce  sync.Once        // doOnce is the proxy init routine protector
+	open    int32            // open tracks the no. open proxy connections
 }
 
 func (proxy *TCPProxy) init() {
@@ -82,15 +84,14 @@ func (proxy *TCPProxy) init() {
 			Timeout:   proxy.DialTimeout,
 		}
 
-		// If transparent proxy requested, set
-		if proxy.Transparent {
-			proxy.lnCfg.Control = SetSocketIPTransparent
-			proxy.dialer.Control = SetSocketIPTransparent
-		}
-
 		// Setup proxy base context
 		proxy.baseCtx, proxy.cancel = context.WithCancel(context.Background())
 	})
+}
+
+// printf is just shorthand for proxy.Logger.Printf().
+func (proxy *TCPProxy) printf(s string, a ...interface{}) {
+	proxy.Logger.Printf(s, a...)
 }
 
 // dial dials a TCP connection to supplied address
@@ -151,18 +152,19 @@ func (proxy *TCPProxy) Proxy(src string, dst string) error {
 			if err != nil {
 				// Check for temporary errors
 				if nErr, ok := err.(net.Error); ok && nErr.Temporary() {
-					proxy.Logger.Printf("%s: temp. accept error: %v", proxy.Name, err)
+					proxy.printf("%s: temp. accept error: %v", proxy.Name, err)
 					time.Sleep(time.Second)
 					continue inner
 				}
 
-				// EOF is not an error
 				if errors.Is(err, io.EOF) {
+					// EOF is NOT an error
 					err = nil
+				} else {
+					// Log all other errors
+					proxy.printf("%s: accept error: %v", proxy.Name, err)
 				}
 
-				// Return now
-				proxy.Logger.Printf("%s: accept error: %v", proxy.Name, err)
 				return err
 			}
 
@@ -195,39 +197,70 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 	// Dial-out to destination address
 	dConn, err := proxy.dial(dst)
 	if err != nil {
-		proxy.Logger.Printf("%s: dial error: %v", proxy.Name, err)
+		proxy.printf("%s: dial error: %v", proxy.Name, err)
 		return
 	}
 
-	// Log proxying
-	proxy.Logger.Printf(
-		"%s: [%d] %s -> %s",
-		proxy.Name,
-		atomic.LoadInt32(&proxy.open),
-		sConn.RemoteAddr().String(),
-		dConn.RemoteAddr().String(),
-	)
-
-	// Cast our connections
+	// Cast our connections and addrs
 	dTCPConn := dConn.(*net.TCPConn)
 	sTCPConn := sConn.(*net.TCPConn)
+	dTCPAddr := dTCPConn.RemoteAddr().(*net.TCPAddr)
+	sTCPAddr := sTCPConn.RemoteAddr().(*net.TCPAddr)
+	dstIP := dTCPAddr.IP.String()
+	srcIP := sTCPAddr.IP.String()
+
+	// Log proxying
+	proxy.Logger.Printf(
+		"%s:%d [%d] %s -> %s",
+		proxy.Name,
+		dTCPAddr.Port,
+		atomic.LoadInt32(&proxy.open),
+		dstIP,
+		srcIP,
+	)
+
+	// Set proxy header if required
+	if proxy.ProxyProto {
+		// 107=worstcase IPv6 scenario
+		hdr := make([]byte, 0, 107)
+		hdr = append(hdr, `PROXY `...)
+
+		// Append protocol version
+		switch len(sTCPAddr.IP) {
+		case net.IPv4len:
+			hdr = append(hdr, `TCP `...)
+		case net.IPv6len:
+			hdr = append(hdr, `TCP6 `...)
+		default:
+			hdr = append(hdr, `UNKNOWN `...)
+		}
+
+		// Append src + dst addresses
+		hdr = append(hdr, srcIP...)
+		hdr = append(hdr, ' ')
+		hdr = append(hdr, dstIP...)
+
+		// Append src + dst ports, then final CRLF
+		hdr = strconv.AppendInt(hdr, int64(sTCPAddr.Port), 10)
+		hdr = append(hdr, ' ')
+		hdr = strconv.AppendInt(hdr, int64(dTCPAddr.Port), 10)
+		hdr = append(hdr, '\r', '\n')
+
+		// Finally write proxy header
+		_, err := dTCPConn.Write(hdr)
+		if err != nil {
+			proxy.printf("%s: output error: %v", proxy.Name, err)
+			return
+		}
+	}
 
 	// Setup error channels
 	errIn := make(chan error, 1)
 	errOut := make(chan error, 1)
 
-	// Setup timeout-setting functions
-	clientTimeout, serverTimeout := noTimeout, noTimeout
-	if proxy.ClientTimeout > 0 {
-		clientTimeout = func() {
-			sTCPConn.SetReadDeadline(time.Now().Add(proxy.ClientTimeout))
-		}
-	}
-	if proxy.ServerTimeout > 0 {
-		serverTimeout = func() {
-			sTCPConn.SetWriteDeadline(time.Now().Add(proxy.ServerTimeout))
-		}
-	}
+	// Prepare the timeout-setting functions
+	clientTimeout := timeoutFunc(proxy.ClientTimeout, sTCPConn.SetReadDeadline)
+	serverTimeout := timeoutFunc(proxy.ServerTimeout, sTCPConn.SetWriteDeadline)
 
 	// Start handling proxying
 	go copyConn(dTCPConn, sTCPConn, errIn, clientTimeout)
@@ -237,13 +270,13 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 	// Wait on input error
 	case err := <-errIn:
 		if err != nil {
-			proxy.Logger.Printf("%s: input error: %v", proxy.Name, err)
+			proxy.printf("%s: input error: %v", proxy.Name, err)
 		}
 
-	// Wait on output error
+	// Wait on output* error
 	case err := <-errOut:
 		if err != nil {
-			proxy.Logger.Printf("%s: output error: %v", proxy.Name, err)
+			proxy.printf("%s: output error: %v", proxy.Name, err)
 		}
 
 	// Server ctx cancelled
@@ -290,5 +323,12 @@ func copyConn(dst *net.TCPConn, src *net.TCPConn, errChan chan error, setTimeout
 	}
 }
 
-// noTimeout is an empty timeout-setting function
-func noTimeout() {}
+// timeoutFunc returns a valid timeout function for copyConn() only if d > 0.
+func timeoutFunc(d time.Duration, fn func(time.Time) error) func() {
+	if d < 1 {
+		return func() {}
+	}
+	return func() {
+		fn(time.Now().Add(d))
+	}
+}

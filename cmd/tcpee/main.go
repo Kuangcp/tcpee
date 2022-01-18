@@ -15,13 +15,16 @@ import (
 	"codeberg.org/gruf/tcpee"
 )
 
+// log is the global logger instance.
 var log = logger.New(os.Stdout)
 
+// usage prints usage string and exits with code.
 func usage(code int) {
 	fmt.Printf("Usage: %s [-c|--config $file]\n", os.Args[0])
 	os.Exit(code)
 }
 
+// closeAll will block until all proxies have closed.
 func closeAll(proxies []*tcpee.TCPProxy) {
 	wg := sync.WaitGroup{}
 	for _, proxy := range proxies {
@@ -60,6 +63,7 @@ func main() {
 		"client-keepalive": "",
 		"proxy":            []interface{}{},
 		"transparent":      false,
+		"proxy-proto":      false,
 	}, false, true)
 	tree.Parse(configFile)
 	tree = nil // to the GC with you!
@@ -69,7 +73,7 @@ func main() {
 		// Define used values
 		var sTimeout, cTimeout time.Duration
 		var sKeepAlive, cKeepAlive time.Duration
-		var transparent bool
+		var proxyProto bool
 		var str string
 		var err error
 
@@ -89,18 +93,19 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed parsing server-keepalive: %v", err)
 		}
-		cKeepAlive, err = time.ParseDuration(details["client-keepalive"].(string))
+		str, _ = details["client-keepalive"].(string)
+		cKeepAlive, err = time.ParseDuration(str)
 		if err != nil {
 			log.Fatalf("Failed parsing client-keepalive: %v", err)
 		}
-		transparent, _ = details["transparent"].(bool)
+		proxyProto, _ = details["proxy-proto"].(bool)
 
 		// Create new proxy server
 		log.Printf("Starting proxy \"%s\"", name)
 		proxy := tcpee.TCPProxy{
 			Name:            name,
 			Logger:          log,
-			Transparent:     transparent,
+			ProxyProto:      proxyProto,
 			ClientKeepAlive: cKeepAlive,
 			ServerKeepAlive: sKeepAlive,
 			ClientTimeout:   cTimeout,
