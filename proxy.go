@@ -247,7 +247,7 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 		// Finally write proxy header
 		_, err := dTCPConn.Write(hdr)
 		if err != nil {
-			proxy.printf("%s: output error: %v", proxy.Name, err)
+			proxy.printf("%s:%d output error: %v", proxy.Name, dTCPAddr.Port, err)
 			return
 		}
 	}
@@ -268,13 +268,13 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 	// Wait on input error
 	case err := <-errIn:
 		if err != nil {
-			proxy.printf("%s: input error: %v", proxy.Name, err)
+			proxy.printf("%s:%d input error: %v", proxy.Name, dTCPAddr.Port, err)
 		}
 
 	// Wait on output* error
 	case err := <-errOut:
 		if err != nil {
-			proxy.printf("%s: output error: %v", proxy.Name, err)
+			proxy.printf("%s:%d output error: %v", proxy.Name, dTCPAddr.Port, err)
 		}
 
 	// Server ctx cancelled
