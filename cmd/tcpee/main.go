@@ -10,13 +10,9 @@ import (
 	"time"
 
 	"codeberg.org/gruf/go-config"
-	"codeberg.org/gruf/go-errors"
-	"codeberg.org/gruf/go-logger"
+	"codeberg.org/gruf/go-logger/v2/log"
 	"codeberg.org/gruf/tcpee"
 )
-
-// log is the global logger instance.
-var log = logger.New(os.Stdout)
 
 // usage prints usage string and exits with code.
 func usage(code int) {
@@ -104,7 +100,6 @@ func main() {
 		log.Printf("Starting proxy \"%s\"", name)
 		proxy := tcpee.TCPProxy{
 			Name:            name,
-			Logger:          log,
 			ProxyProto:      proxyProto,
 			ClientKeepAlive: cKeepAlive,
 			ServerKeepAlive: sKeepAlive,
@@ -125,10 +120,9 @@ func main() {
 			// Start proxying!
 			go func() {
 				err := proxy.Proxy(split[0], split[1])
-				if err != nil &&
-					!errors.Is(err, tcpee.ErrProxyClosed) {
+				if err != nil && err != tcpee.ErrProxyClosed {
 					closeAll(running)
-					logger.Fatal(err)
+					log.Fatal(err)
 				}
 			}()
 		}

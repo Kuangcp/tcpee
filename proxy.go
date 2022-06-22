@@ -2,6 +2,7 @@ package tcpee
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"strconv"
@@ -9,20 +10,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"codeberg.org/gruf/go-errors"
+	"codeberg.org/gruf/go-kv"
+	"codeberg.org/gruf/go-logger/v2/log"
 )
 
-// ErrProxyClosed will be returned upon proxy close
+// ErrProxyClosed will be returned upon proxy close.
 var ErrProxyClosed = errors.New("tcpee: proxy closed")
 
 type TCPProxy struct {
 	// Name is the name of this proxy server, used when
 	// logging via the supplied logger
 	Name string
-
-	// Logger is the Logger implementation this instance
-	// will use, or nil to disable
-	Logger Logger
 
 	// ProxyProto determines whether to write proxy protocol headers
 	// for each proxied TCP connection. The header is proxy protocol
@@ -60,7 +58,8 @@ type TCPProxy struct {
 	baseCtx context.Context  // baseCtx is the proxy base context
 	serveWg sync.WaitGroup   // serveWg tracks running serve routines
 	doOnce  sync.Once        // doOnce is the proxy init routine protector
-	open    int32            // open tracks the no. open proxy connections
+	ppool   sync.Pool        // ppool is the proxy proto buffer pool
+	open    int64            // open tracks the no. open proxy connections
 }
 
 func (proxy *TCPProxy) init() {
@@ -68,11 +67,6 @@ func (proxy *TCPProxy) init() {
 		// If no name set, use default
 		if len(proxy.Name) < 1 {
 			proxy.Name = "proxy"
-		}
-
-		// If no logger provided, use nil
-		if proxy.Logger == nil {
-			proxy.Logger = &nopLogger{}
 		}
 
 		// Setup the listener cfg and dialer
@@ -84,14 +78,15 @@ func (proxy *TCPProxy) init() {
 			Timeout:   proxy.DialTimeout,
 		}
 
+		// Setup proxy proto buffer pool
+		proxy.ppool.New = func() interface{} {
+			// 107 = worstcase scenario buflen
+			return make([]byte, 0, 107)
+		}
+
 		// Setup proxy base context
 		proxy.baseCtx, proxy.cancel = context.WithCancel(context.Background())
 	})
-}
-
-// printf is just shorthand for proxy.Logger.Printf().
-func (proxy *TCPProxy) printf(s string, a ...interface{}) {
-	proxy.Logger.Printf(s, a...)
 }
 
 // dial dials a TCP connection to supplied address
@@ -152,7 +147,11 @@ func (proxy *TCPProxy) Proxy(src string, dst string) error {
 			if err != nil {
 				// Check for temporary errors
 				if nErr, ok := err.(net.Error); ok && nErr.Temporary() {
-					proxy.printf("%s: temp. accept error: %v", proxy.Name, err)
+					log.ErrorKVs(kv.Fields{
+						{K: "proxy", V: proxy.Name},
+						{K: "error", V: err},
+						{K: "msg", V: "temp. accept error"},
+					}...)
 					time.Sleep(time.Second)
 					continue inner
 				}
@@ -162,7 +161,11 @@ func (proxy *TCPProxy) Proxy(src string, dst string) error {
 					err = nil
 				} else {
 					// Log all other errors
-					proxy.printf("%s: accept error: %v", proxy.Name, err)
+					log.ErrorKVs(kv.Fields{
+						{K: "proxy", V: proxy.Name},
+						{K: "error", V: err},
+						{K: "msg", V: "accept error"},
+					}...)
 				}
 
 				return err
@@ -174,7 +177,7 @@ func (proxy *TCPProxy) Proxy(src string, dst string) error {
 
 		// Start tracking serve routine
 		proxy.serveWg.Add(1)
-		atomic.AddInt32(&proxy.open, 1)
+		atomic.AddInt64(&proxy.open, 1)
 
 		// Serve this connection
 		go proxy.serve(conn, dst)
@@ -185,7 +188,7 @@ func (proxy *TCPProxy) Proxy(src string, dst string) error {
 func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 	defer func() {
 		// Untrack serve routine
-		atomic.AddInt32(&proxy.open, -1)
+		atomic.AddInt64(&proxy.open, -1)
 		proxy.serveWg.Done()
 	}()
 
@@ -197,35 +200,42 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 	// Dial-out to destination address
 	dConn, err := proxy.dial(dst)
 	if err != nil {
-		proxy.printf("%s: dial error: %v", proxy.Name, err)
+		log.ErrorKVs(kv.Fields{
+			{K: "proxy", V: proxy.Name},
+			{K: "error", V: err},
+			{K: "msg", V: "dial error"},
+		}...)
 		return
 	}
 
 	// Cast our connections and addrs
 	dTCPConn := dConn.(*net.TCPConn)
 	sTCPConn := sConn.(*net.TCPConn)
-	dTCPAddr := dTCPConn.LocalAddr().(*net.TCPAddr)
+	dTCPAddr := dTCPConn.RemoteAddr().(*net.TCPAddr)
 	sTCPAddr := sTCPConn.RemoteAddr().(*net.TCPAddr)
-	dstIP := dTCPAddr.IP.String()
 	srcIP := sTCPAddr.IP.String()
+	dstIP := dTCPAddr.IP.String()
+	dstPort := strconv.Itoa(dTCPAddr.Port)
 
 	// Log proxying
-	proxy.Logger.Printf(
-		"%s:%d [%d] %s -> %s",
-		proxy.Name,
-		dTCPAddr.Port,
-		atomic.LoadInt32(&proxy.open),
-		dstIP,
-		srcIP,
-	)
+	log.InfoKVs(kv.Fields{
+		{K: "proxy", V: proxy.Name},
+		{K: "count", V: atomic.LoadInt64(&proxy.open)},
+		{K: "src", V: srcIP},
+		{K: "dst", V: dstIP + ":" + dstPort},
+	}...)
 
 	// Set proxy header if required
 	if proxy.ProxyProto {
-		// 107=worstcase IPv6 scenario
-		hdr := make([]byte, 0, 107)
-		hdr = append(hdr, `PROXY `...)
+		// Acquire header buffer
+		hdr := proxy.ppool.Get().([]byte)
+		defer func() {
+			hdr = hdr[:0]
+			proxy.ppool.Put(hdr)
+		}()
 
 		// Append protocol version
+		hdr = append(hdr, `PROXY `...)
 		if isIPv4(sTCPAddr.IP) {
 			hdr = append(hdr, `TCP4 `...)
 		} else {
@@ -241,13 +251,17 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 		// Append src + dst ports, then final CRLF
 		hdr = strconv.AppendInt(hdr, int64(sTCPAddr.Port), 10)
 		hdr = append(hdr, ' ')
-		hdr = strconv.AppendInt(hdr, int64(dTCPAddr.Port), 10)
+		hdr = append(hdr, dstPort...)
 		hdr = append(hdr, '\r', '\n')
 
 		// Finally write proxy header
 		_, err := dTCPConn.Write(hdr)
 		if err != nil {
-			proxy.printf("%s:%d output error: %v", proxy.Name, dTCPAddr.Port, err)
+			log.ErrorKVs(kv.Fields{
+				{K: "proxy", V: proxy.Name},
+				{K: "error", V: err},
+				{K: "msg", V: "output error"},
+			}...)
 			return
 		}
 	}
@@ -268,13 +282,21 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 	// Wait on input error
 	case err := <-errIn:
 		if err != nil {
-			proxy.printf("%s:%d input error: %v", proxy.Name, dTCPAddr.Port, err)
+			log.ErrorKVs(kv.Fields{
+				{K: "proxy", V: proxy.Name},
+				{K: "error", V: err},
+				{K: "msg", V: "input error"},
+			}...)
 		}
 
-	// Wait on output* error
+	// Wait on output error
 	case err := <-errOut:
 		if err != nil {
-			proxy.printf("%s:%d output error: %v", proxy.Name, dTCPAddr.Port, err)
+			log.ErrorKVs(kv.Fields{
+				{K: "proxy", V: proxy.Name},
+				{K: "error", V: err},
+				{K: "msg", V: "output error"},
+			}...)
 		}
 
 	// Server ctx cancelled

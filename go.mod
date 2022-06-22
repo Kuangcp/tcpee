@@ -4,6 +4,7 @@ go 1.16
 
 require (
 	codeberg.org/gruf/go-config v1.0.0
-	codeberg.org/gruf/go-errors v1.0.5
-	codeberg.org/gruf/go-logger v1.4.1
+	codeberg.org/gruf/go-kv v1.3.0
+	codeberg.org/gruf/go-logger/v2 v2.0.5
+	github.com/pelletier/go-toml v1.9.5 // indirect
 )
