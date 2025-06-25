@@ -3,6 +3,7 @@ package tcpee
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strconv"
@@ -60,6 +61,16 @@ type TCPProxy struct {
 	doOnce  sync.Once        // doOnce is the proxy init routine protector
 	ppool   sync.Pool        // ppool is the proxy proto buffer pool
 	open    int64            // open tracks the no. open proxy connections
+
+	// 流量统计字段
+	bytesIn  uint64 // 入站流量统计(字节)
+	bytesOut uint64 // 出站流量统计(字节)
+	
+	// 统计锁
+	statsMutex sync.RWMutex
+	
+	// 统计定时器
+	statsTimer *time.Timer
 }
 
 func (proxy *TCPProxy) init() {
@@ -110,6 +121,9 @@ func (proxy *TCPProxy) Close() {
 func (proxy *TCPProxy) Proxy(src string, dst string) error {
 	// Ensure initialized
 	proxy.init()
+
+	// Start stats timer
+	proxy.startStatsTimer()
 
 	// Ensure we can dial-out
 	conn, err := proxy.dial(dst)
@@ -219,7 +233,7 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 
 	// Log proxying
 	log.InfoKVs(kv.Fields{
-		{K: "proxy", V: proxy.Name},
+		// {K: "proxy", V: proxy.Name},
 		{K: "count", V: atomic.LoadInt64(&proxy.open)},
 		{K: "src", V: srcIP},
 		{K: "dst", V: dstIP + ":" + dstPort},
@@ -275,8 +289,8 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 	serverTimeout := timeoutFunc(proxy.ServerTimeout, sTCPConn.SetWriteDeadline)
 
 	// Start handling proxying
-	go copyConn(dTCPConn, sTCPConn, errIn, clientTimeout)
-	go copyConn(sTCPConn, dTCPConn, errOut, serverTimeout)
+	go copyConn(dTCPConn, sTCPConn, errIn, clientTimeout, proxy, true)
+	go copyConn(sTCPConn, dTCPConn, errOut, serverTimeout, proxy, false)
 
 	select {
 	// Wait on input error
@@ -308,7 +322,7 @@ func (proxy *TCPProxy) serve(sConn net.Conn, dst string) {
 
 // copyConn copies from once TCPConn to another, using TCPConn's ReadFrom implementation
 // to take advantage of the splice optimization. this also handles connection timeouts
-func copyConn(dst *net.TCPConn, src *net.TCPConn, errChan chan error, setTimeout func()) {
+func copyConn(dst *net.TCPConn, src *net.TCPConn, errChan chan error, setTimeout func(), proxy *TCPProxy, isClientToServer bool) {
 	defer func() {
 		// Ensure dst conn and error chan
 		// closed on function close (even panic)
@@ -323,6 +337,13 @@ func copyConn(dst *net.TCPConn, src *net.TCPConn, errChan chan error, setTimeout
 		// Copy from source to destination
 		n, err := dst.ReadFrom(src)
 		if err == nil || err == io.EOF || err == net.ErrClosed {
+			// 统计流量
+			if isClientToServer {
+				proxy.addBytesIn(n)
+			} else {
+				proxy.addBytesOut(n)
+			}
+			
 			// EOF / conn close -- no error
 			break
 		}
@@ -332,6 +353,13 @@ func copyConn(dst *net.TCPConn, src *net.TCPConn, errChan chan error, setTimeout
 		if err, ok := err.(net.Error); ok && err.Timeout() {
 			if n < 1 {
 				break
+			}
+
+			// 统计流量
+			if isClientToServer {
+				proxy.addBytesIn(n)
+			} else {
+				proxy.addBytesOut(n)
 			}
 
 			// Rate is acceptable, keep-going
@@ -367,4 +395,68 @@ func isZeros(ip net.IP) bool {
 		}
 	}
 	return true
+}
+
+// addBytesIn 增加入站流量统计
+func (proxy *TCPProxy) addBytesIn(n int64) {
+	proxy.statsMutex.Lock()
+	proxy.bytesIn += uint64(n)
+	proxy.statsMutex.Unlock()
+}
+
+// addBytesOut 增加出站流量统计
+func (proxy *TCPProxy) addBytesOut(n int64) {
+	proxy.statsMutex.Lock()
+	proxy.bytesOut += uint64(n)
+	proxy.statsMutex.Unlock()
+}
+
+// getStats 获取当前统计信息
+func (proxy *TCPProxy) getStats() (bytesIn uint64, bytesOut uint64, connections int64) {
+	proxy.statsMutex.RLock()
+	bytesIn = proxy.bytesIn
+	bytesOut = proxy.bytesOut
+	connections = atomic.LoadInt64(&proxy.open)
+	proxy.statsMutex.RUnlock()
+	return
+}
+
+// formatBytes 格式化字节数为人类可读格式
+func formatBytes(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := uint64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// startStatsTimer 启动统计定时器
+func (proxy *TCPProxy) startStatsTimer() {
+	proxy.statsTimer = time.NewTimer(time.Minute)
+	go func() {
+		for {
+			select {
+			case <-proxy.baseCtx.Done():
+				if proxy.statsTimer != nil {
+					proxy.statsTimer.Stop()
+				}
+				return
+			case <-proxy.statsTimer.C:
+				bytesIn, bytesOut, conns := proxy.getStats()
+				log.InfoKVs(kv.Fields{
+					{K: "proxy", V: proxy.Name},
+					{K: "bytes_in", V: formatBytes(bytesIn)},
+					{K: "bytes_out", V: formatBytes(bytesOut)},
+					{K: "active_connections", V: conns},
+					{K: "msg", V: "stats"},
+				}...)
+				proxy.statsTimer.Reset(time.Minute)
+			}
+		}
+	}()
 }

@@ -64,7 +64,7 @@ func main() {
 	tree.Parse(configFile)
 	tree = nil // to the GC with you!
 
-	running := []*tcpee.TCPProxy{}
+	var running []*tcpee.TCPProxy
 	for name, details := range *proxies {
 		// Define used values
 		var sTimeout, cTimeout time.Duration
